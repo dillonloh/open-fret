@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-fret training</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --meter-track: #cde2fb;
+    --meter-fill: #2a78d6;
+    --good-text: #006300;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --meter-track: #0d366b;
+      --meter-fill: #3987e5;
+      --good-text: #0ca30c;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text-primary);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+           padding: 20px 28px 0; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  label.run { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+  select, button { font: inherit; color: var(--text-primary); background: var(--surface);
+                   border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; }
+  button { cursor: pointer; color: var(--text-secondary); font-size: 12px; padding: 2px 10px; }
+  button:hover { color: var(--text-primary); }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px 28px 28px; display: grid; gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+          padding: 16px 20px; margin: 0; min-width: 0; }
+  .banner { border-color: var(--critical); }
+  .muted { color: var(--muted); }
+  .secondary { color: var(--text-secondary); }
+
+  .progress-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .status .icon { font-size: 12px; }
+  .meta { color: var(--text-secondary); display: flex; gap: 14px; flex-wrap: wrap; }
+  .hero-row { display: flex; align-items: baseline; gap: 16px; margin: 8px 0 10px; flex-wrap: wrap; }
+  .hero { font-size: 48px; font-weight: 600; line-height: 1; }
+  .meter { height: 8px; border-radius: 4px; background: var(--meter-track); overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--meter-fill); border-radius: 4px;
+                 transition: width .4s ease; }
+  .times { display: flex; justify-content: space-between; gap: 16px; margin-top: 8px;
+           color: var(--text-secondary); flex-wrap: wrap; }
+
+  .kpis { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .tile .label { color: var(--text-secondary); }
+  .tile .value { font-size: 26px; font-weight: 600; margin: 2px 0; }
+  .tile .sub { color: var(--muted); font-size: 13px; }
+  .delta-good { color: var(--good-text); }
+  .delta-bad { color: var(--critical); }
+
+  .chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .chart-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .chart-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .legend { display: flex; gap: 16px; margin: 10px 0 4px; color: var(--text-secondary); font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .key-line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+  .key-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .plot { width: 100%; margin-top: 8px; }
+  .plot svg { display: block; overflow: visible; }
+  .plot svg:focus { outline: none; }
+  .plot svg:focus-visible { outline: 2px solid var(--series-1); outline-offset: 4px; border-radius: 4px; }
+  .empty { display: flex; align-items: center; justify-content: center; color: var(--muted); margin: 0; }
+  .grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+  svg .axis { stroke: var(--axis); stroke-width: 1; }
+  svg .cross { stroke: var(--axis); stroke-width: 1; }
+  svg .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  svg .end-label { fill: var(--text-secondary); font-size: 12px; }
+  svg .ring { stroke: var(--surface); stroke-width: 2; }
+
+  .table { max-height: 320px; overflow: auto; margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { text-align: right; padding: 4px 10px; border-bottom: 1px solid var(--grid); }
+  th { position: sticky; top: 0; background: var(--surface); color: var(--text-secondary); font-weight: 600; }
+  th:first-child, td:first-child { text-align: left; }
+
+  #tooltip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface);
+             border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); font-size: 13px; min-width: 140px; }
+  .tip-title { color: var(--text-secondary); margin-bottom: 4px; }
+  .tip-row { display: flex; align-items: center; gap: 8px; }
+  .tip-row .key-line { flex: none; }
+  .tip-name { color: var(--text-secondary); }
+  footer { color: var(--muted); font-size: 12px; }
+  code { font-size: 12px; }
+</style>
+</head>
+<body class="viz-root">
+<header>
+  <h1>open-fret training</h1>
+  <label class="run">Run <select id="run"></select></label>
+</header>
+
+<main>
+  <section class="card banner" id="offline" hidden>
+    <strong>Can't reach the dashboard server.</strong>
+    <span class="secondary">Start it with <code>.venv/bin/python dashboard/server.py</code>. Showing the last data received.</span>
+  </section>
+
+  <section class="card" id="noRuns" hidden>
+    <strong>No training runs yet.</strong>
+    <p class="secondary">Runs appear here once a training script writes <code>models/&lt;run&gt;/metrics.jsonl</code>. Try a short test run:
+      <code>.venv/bin/python scripts/quick_train.py 300</code></p>
+  </section>
+
+  <div id="dash" hidden>
+    <section class="card" aria-label="Progress">
+      <div class="progress-top">
+        <span class="status" id="status"></span>
+        <span class="meta" id="meta"></span>
+      </div>
+      <div class="hero-row">
+        <span class="hero" id="pct">–</span>
+        <span class="secondary" id="steps"></span>
+      </div>
+      <div class="meter" role="progressbar" aria-label="Training progress" aria-valuemin="0" aria-valuemax="100" id="meter"><div id="meterFill"></div></div>
+      <div class="times"><span id="elapsed"></span><span id="eta"></span></div>
+      <div class="times" id="overall"></div>
+    </section>
+
+    <section class="kpis" style="margin-top:16px">
+      <div class="card tile"><div class="label">Train loss</div><div class="value" id="kLoss">–</div><div class="sub" id="kLossSub"></div></div>
+      <div class="card tile"><div class="label">Best validation loss</div><div class="value" id="kVal">–</div><div class="sub" id="kValSub"></div></div>
+      <div class="card tile"><div class="label">Speed</div><div class="value" id="kSpeed">–</div><div class="sub" id="kSpeedSub"></div></div>
+      <div class="card tile"><div class="label">GPU use (whole Mac)</div><div class="value" id="kGpu">–</div><div class="sub" id="kGpuSub"></div></div>
+      <div class="card tile"><div class="label">Disk free</div><div class="value" id="kDisk">–</div><div class="sub" id="kDiskSub"></div></div>
+    </section>
+
+    <figure class="card" id="lossCard" style="margin-top:16px">
+      <div class="chart-head">
+        <div><h2>Loss</h2><p>Cross-entropy per tab token. Validation is measured at set intervals.</p></div>
+        <button class="toggle" aria-pressed="false">Table</button>
+      </div>
+      <div class="legend">
+        <span><i class="key-line" style="background:var(--series-1)"></i>Train</span>
+        <span><i class="key-dot" style="background:var(--series-2)"></i>Validation</span>
+      </div>
+      <div class="plot"></div>
+      <div class="table" hidden></div>
+    </figure>
+
+    <div class="grid2" style="margin-top:16px">
+      <figure class="card" id="lrCard">
+        <div class="chart-head">
+          <div><h2>Learning rate</h2><p>Warmup, then cosine decay.</p></div>
+          <button class="toggle" aria-pressed="false">Table</button>
+        </div>
+        <div class="plot"></div>
+        <div class="table" hidden></div>
+      </figure>
+      <figure class="card" id="gpuCard">
+        <div class="chart-head">
+          <div><h2>GPU use, last 15 minutes</h2><p>Whole Mac, sampled every 2 s while this dashboard runs.</p></div>
+          <button class="toggle" aria-pressed="false">Table</button>
+        </div>
+        <div class="plot"></div>
+        <div class="table" hidden></div>
+      </figure>
+    </div>
+
+    <footer id="footer" style="margin-top:16px"></footer>
+  </div>
+</main>
+
+<div id="tooltip" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const POLL_MS = 3000;
+let selectedRun = null;
+
+// ---------- formatting ----------
+const fmtNum = (v) => Number(v.toPrecision(3)).toLocaleString();
+const fmtLoss = (v) => v.toFixed(3);
+const fmtLr = (v) => (v === 0 ? '0' : v.toExponential(1));
+const fmtCompact = (v) => (Math.abs(v) >= 1000 ? fmtNum(v / 1000) + 'K' : fmtNum(v));
+const fmtGB = (b) => (b / 1e9).toFixed(1) + ' GB';
+const fmtClock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function fmtDur(sec) {
+  if (sec == null || !isFinite(sec)) return '–';
+  sec = Math.max(0, Math.round(sec));
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600),
+        m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m) return `${m}m ${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+const fmtAgo = (s) => (s > -1 ? 'now' : `${Math.round(-s / 60)}m ago`);
+
+// ---------- charts ----------
+function svgEl(tag, attrs, parent) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+function niceTicks(min, max, count) {
+  if (max <= min) max = min + 1;
+  const raw = (max - min) / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), err = raw / mag;
+  const step = (err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1) * mag;
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step, ticks = [];
+  for (let v = lo; v <= hi + step / 1e6; v += step) ticks.push(Number(v.toPrecision(12)));
+  return { ticks, lo, hi };
+}
+
+function nearestIndex(sorted, x) {
+  let best = 0;
+  for (let i = 1; i < sorted.length; i++) if (Math.abs(sorted[i] - x) < Math.abs(sorted[best] - x)) best = i;
+  return best;
+}
+const nearestPoint = (points, x) => (points.length ? points[nearestIndex(points.map((p) => p.x), x)] : null);
+
+const tip = $('tooltip');
+function showTip(title, rows, x, y) {
+  tip.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'tip-title';
+  head.textContent = title;
+  tip.appendChild(head);
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'tip-row';
+    const key = document.createElement('i');
+    key.className = 'key-line';
+    key.style.background = `var(${r.color})`;
+    const value = document.createElement('strong');
+    value.textContent = r.value;
+    const name = document.createElement('span');
+    name.className = 'tip-name';
+    name.textContent = r.name;
+    row.append(key, value, name);
+    tip.appendChild(row);
+  }
+  tip.hidden = false;
+  const w = tip.offsetWidth;
+  tip.style.left = (x + 14 + w > window.innerWidth - 8 ? x - w - 14 : x + 14) + 'px';
+  tip.style.top = Math.max(8, y) + 'px';
+}
+const hideTip = () => { tip.hidden = true; };
+
+class LineChart {
+  constructor(card, opts) {
+    this.opts = opts;
+    this.plot = card.querySelector('.plot');
+    this.tableBox = card.querySelector('.table');
+    this.toggle = card.querySelector('.toggle');
+    this.showTable = false;
+    this.hoverX = null;
+    this.series = null;
+    this.toggle.addEventListener('click', () => {
+      this.showTable = !this.showTable;
+      this.toggle.textContent = this.showTable ? 'Chart' : 'Table';
+      this.toggle.setAttribute('aria-pressed', String(this.showTable));
+      this.plot.hidden = this.showTable;
+      this.tableBox.hidden = !this.showTable;
+      this.render();
+    });
+    new ResizeObserver(() => this.render()).observe(this.plot);
+  }
+
+  update(series, opts) {
+    this.series = series;
+    Object.assign(this.opts, opts || {});
+    this.render();
+  }
+
+  render() {
+    if (!this.series) return;
+    if (this.showTable) return this.renderTable();
+    const o = this.opts, W = this.plot.clientWidth, H = o.height || 240;
+    if (!W) return;
+    const m = { l: 52, r: 64, t: 12, b: 28 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const all = this.series.flatMap((s) => s.points);
+    this.plot.textContent = '';
+    if (!all.length) {
+      const p = document.createElement('p');
+      p.className = 'empty';
+      p.style.height = H + 'px';
+      p.textContent = o.empty || 'No data yet';
+      this.plot.appendChild(p);
+      return;
+    }
+
+    let [x0, x1] = o.xDomain || [Math.min(...all.map((p) => p.x)), Math.max(...all.map((p) => p.x))];
+    if (x1 <= x0) x1 = x0 + 1;
+    const yt = niceTicks(0, o.yMax ?? Math.max(...all.map((p) => p.y)), 4);
+    const X = (v) => m.l + (v - x0) / (x1 - x0) * pw;
+    const Y = (v) => m.t + ph - v / yt.hi * ph;
+    const svg = svgEl('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img',
+                               'aria-label': o.label, tabindex: 0 });
+
+    for (const t of yt.ticks) {
+      const y = Math.round(Y(t)) + 0.5;
+      svgEl('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, class: t === 0 ? 'axis' : 'grid' }, svg);
+      svgEl('text', { x: m.l - 8, y, class: 'tick', 'text-anchor': 'end', 'dominant-baseline': 'middle' }, svg)
+        .textContent = o.yTick(t);
+    }
+    const xTicks = niceTicks(x0, x1, Math.max(2, Math.floor(pw / 90))).ticks.filter((v) => v >= x0 && v <= x1);
+    for (const t of xTicks) {
+      svgEl('text', { x: X(t), y: H - 8, class: 'tick', 'text-anchor': 'middle' }, svg).textContent = o.xTick(t);
+    }
+
+    for (const s of this.series) {
+      if (!s.points.length) continue;
+      const color = `var(${s.color})`;
+      if (s.mode === 'line') {
+        const d = s.points.map((p, i) => `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join('');
+        if (s.area) {
+          svgEl('path', { d: `${d}L${X(s.points.at(-1).x).toFixed(1)},${Y(0)}L${X(s.points[0].x).toFixed(1)},${Y(0)}Z`,
+                          fill: color, 'fill-opacity': 0.1, stroke: 'none' }, svg);
+        }
+        svgEl('path', { d, fill: 'none', stroke: color, 'stroke-width': 2,
+                        'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+        const e = s.points.at(-1);
+        svgEl('circle', { cx: X(e.x), cy: Y(e.y), r: 4, fill: color, class: 'ring' }, svg);
+      } else {
+        for (const p of s.points) svgEl('circle', { cx: X(p.x), cy: Y(p.y), r: 4, fill: color, class: 'ring' }, svg);
+      }
+    }
+
+    // Direct end labels, dropped (legend + tooltip carry it) when they would collide.
+    const ends = this.series.filter((s) => s.points.length).map((s) => s.points.at(-1));
+    const ys = ends.map((p) => Y(p.y));
+    if (!ys.some((a, i) => ys.some((b, j) => i < j && Math.abs(a - b) < 16))) {
+      for (const p of ends) {
+        svgEl('text', { x: X(p.x) + 9, y: Y(p.y), class: 'end-label', 'dominant-baseline': 'middle' }, svg)
+          .textContent = o.yFmt(p.y);
+      }
+    }
+
+    // Hover layer: crosshair snaps to the nearest x; one tooltip lists every series.
+    const xs = [...new Set(all.map((p) => p.x))].sort((a, b) => a - b);
+    const cross = svgEl('line', { y1: m.t, y2: m.t + ph, class: 'cross', visibility: 'hidden' }, svg);
+    const hit = svgEl('rect', { x: m.l, y: 0, width: pw, height: m.t + ph, fill: 'transparent' }, svg);
+    const show = (i) => {
+      if (i == null) { cross.setAttribute('visibility', 'hidden'); hideTip(); return; }
+      const xv = xs[i];
+      this.hoverX = xv;
+      cross.setAttribute('x1', X(xv));
+      cross.setAttribute('x2', X(xv));
+      cross.setAttribute('visibility', 'visible');
+      const rows = this.series.map((s) => {
+        const p = nearestPoint(s.points, xv);
+        return p && { color: s.color, value: o.yFmt(p.y),
+                      name: s.name + (p.x !== xv ? ` (${o.xFmt(p.x)})` : '') };
+      }).filter(Boolean);
+      const box = svg.getBoundingClientRect();
+      showTip(o.xFmt(xv), rows, box.left + X(xv), box.top + m.t);
+    };
+    const leave = () => { this.hoverX = null; show(null); };
+    hit.addEventListener('pointermove', (ev) => {
+      const box = svg.getBoundingClientRect();
+      show(nearestIndex(xs, x0 + (ev.clientX - box.left - m.l) / pw * (x1 - x0)));
+    });
+    hit.addEventListener('pointerleave', leave);
+    svg.addEventListener('focus', () => show(this.hoverX == null ? xs.length - 1 : nearestIndex(xs, this.hoverX)));
+    svg.addEventListener('blur', leave);
+    svg.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+      ev.preventDefault();
+      const i = this.hoverX == null ? xs.length - 1 : nearestIndex(xs, this.hoverX);
+      show(Math.max(0, Math.min(xs.length - 1, i + (ev.key === 'ArrowRight' ? 1 : -1))));
+    });
+    this.plot.appendChild(svg);
+    if (this.hoverX != null) show(nearestIndex(xs, this.hoverX));
+  }
+
+  renderTable() {
+    const o = this.opts, LIMIT = 500;
+    const xs = [...new Set(this.series.flatMap((s) => s.points.map((p) => p.x)))].sort((a, b) => b - a);
+    const maps = this.series.map((s) => new Map(s.points.map((p) => [p.x, p.y])));
+    const table = document.createElement('table');
+    const headRow = table.createTHead().insertRow();
+    for (const name of [o.xTitle, ...this.series.map((s) => s.name)]) {
+      const th = document.createElement('th');
+      th.textContent = name;
+      headRow.appendChild(th);
+    }
+    const body = table.createTBody();
+    for (const x of xs.slice(0, LIMIT)) {
+      const row = body.insertRow();
+      row.insertCell().textContent = o.xFmt(x);
+      for (const map of maps) row.insertCell().textContent = map.has(x) ? o.yFmt(map.get(x)) : '';
+    }
+    this.tableBox.textContent = '';
+    if (xs.length > LIMIT) {
+      const note = document.createElement('p');
+      note.className = 'muted';
+      note.textContent = `Latest ${LIMIT} of ${xs.length.toLocaleString()} rows.`;
+      this.tableBox.appendChild(note);
+    }
+    this.tableBox.appendChild(table);
+  }
+}
+
+const lossChart = new LineChart($('lossCard'), {
+  label: 'Train and validation loss by step', xTitle: 'Step',
+  xTick: fmtCompact, xFmt: (v) => `Step ${v.toLocaleString()}`, yTick: fmtNum, yFmt: fmtLoss,
+  empty: 'Waiting for the first loss…',
+});
+const lrChart = new LineChart($('lrCard'), {
+  label: 'Learning rate by step', xTitle: 'Step', height: 200,
+  xTick: fmtCompact, xFmt: (v) => `Step ${v.toLocaleString()}`, yTick: fmtLr, yFmt: fmtLr,
+});
+const gpuChart = new LineChart($('gpuCard'), {
+  label: 'GPU utilisation over the last 15 minutes', xTitle: 'Time', height: 200,
+  xDomain: [-900, 0], yMax: 100,
+  xTick: fmtAgo, xFmt: fmtAgo, yTick: (v) => `${v}%`, yFmt: (v) => `${Math.round(v)}%`,
+  empty: 'Collecting GPU samples…',
+});
+
+// ---------- page ----------
+const STATUS = {
+  running:   { icon: '●', color: 'var(--good)',     label: 'Running' },
+  preparing: { icon: '◌', color: 'var(--muted)',    label: 'Preparing data' },
+  finished:  { icon: '✓', color: 'var(--good)',     label: 'Finished' },
+  stopped:   { icon: '▲', color: 'var(--warning)',  label: 'Stopped before finishing' },
+};
+const DEVICES = { mps: 'Apple GPU (mps)', cuda: 'NVIDIA GPU (cuda)', cpu: 'CPU only' };
+
+function setStatus(node, s) {
+  node.textContent = '';
+  const icon = document.createElement('span');
+  icon.className = 'icon';
+  icon.style.color = s.color;
+  icon.textContent = s.icon;
+  node.append(icon, document.createTextNode(s.label));
+}
+
+function renderRuns(runs, current) {
+  const select = $('run');
+  const names = runs.map((r) => r.name);
+  if (select.dataset.names !== names.join('\n')) {
+    select.textContent = '';
+    for (const name of names) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+    select.dataset.names = names.join('\n');
+  }
+  if (current) select.value = current;
+}
+
+function render(state) {
+  renderRuns(state.runs, state.run && state.run.name);
+  $('noRuns').hidden = !!state.run;
+  $('dash').hidden = !state.run;
+  renderSystem(state);
+  if (!state.run) return;
+
+  const run = state.run, start = run.start || {}, now = state.now, logs = run.logs;
+  const train = logs.filter((l) => 'loss' in l).map((l) => ({ x: l.step, y: l.loss, t: l.time }));
+  const val = logs.filter((l) => 'eval_loss' in l).map((l) => ({ x: l.step, y: l.eval_loss }));
+  const lr = logs.filter((l) => 'learning_rate' in l).map((l) => ({ x: l.step, y: l.learning_rate }));
+  const lastLog = logs.at(-1);
+  const maxSteps = start.max_steps || (lastLog && lastLog.max_steps) || 0;
+  const batch = (start.batch_size || 0) * (start.grad_accum || 1);
+
+  // Speed from the last few train logs of the current session.
+  const recent = train.filter((p) => p.t >= (run.session_time || 0)).slice(-6);
+  const sps = recent.length >= 2 && recent.at(-1).x > recent[0].x
+    ? (recent.at(-1).t - recent[0].t) / (recent.at(-1).x - recent[0].x) : null;
+
+  // A batch run (train_model.py --epochs N) stops at batch_max_steps: the hero shows the
+  // batch, and a second line shows the whole run.
+  const isBatch = !!start.batch_max_steps;
+  const from = isBatch ? start.resumed_from_step || 0 : 0;
+  const target = isBatch ? start.batch_max_steps : maxSteps;
+  const totalEpochs = start.num_train_epochs;
+
+  let step = lastLog ? lastLog.step : 0;
+  if (run.status === 'running' && sps && lastLog) step = Math.min(target, step + (now - lastLog.time) / sps);
+  const pct = target > from ? Math.min(100, Math.max(0, (step - from) / (target - from) * 100)) : 0;
+
+  const batchDone = run.status === 'finished' && isBatch && run.end_step < maxSteps;
+  setStatus($('status'), batchDone ? { ...STATUS.finished, label: 'Batch finished' } : STATUS[run.status] || STATUS.stopped);
+  const meta = $('meta');
+  meta.textContent = '';
+  const device = (start.device || '').split(':')[0];
+  const bits = [
+    device && (device === 'cpu' ? '▲ ' : '') + (DEVICES[device] || start.device),
+    start.params && `${(start.params / 1e6).toFixed(1)}M params`,
+    batch && `batch ${start.batch_size} × ${start.grad_accum} = ${batch}`,
+    isBatch ? `${totalEpochs} epochs in total` : maxSteps && `${maxSteps.toLocaleString()} steps`,
+  ].filter(Boolean);
+  for (const b of bits) { const s = document.createElement('span'); s.textContent = b; meta.appendChild(s); }
+
+  $('pct').textContent = target ? `${pct < 10 && pct > 0 ? pct.toFixed(1) : Math.floor(pct)}%` : '–';
+  const epoch = lastLog && lastLog.epoch != null ? ` · epoch ${lastLog.epoch.toFixed(2)}` : '';
+  const stepText = `step ${Math.floor(step).toLocaleString()} of ${target.toLocaleString()}${epoch}`;
+  $('steps').textContent = !target ? ''
+    : isBatch ? `This batch: epochs ${Math.round(from / maxSteps * totalEpochs)} → ${start.stop_at_epoch} · ${stepText}`
+    : stepText[0].toUpperCase() + stepText.slice(1);
+  $('meterFill').style.width = pct + '%';
+  $('meter').setAttribute('aria-valuenow', Math.round(pct));
+  const overall = maxSteps ? step / maxSteps * 100 : 0;
+  $('overall').textContent = isBatch
+    ? `Whole run: ${overall.toFixed(1)}% of ${totalEpochs} epochs` +
+      (sps && run.status === 'running' ? ` · about ${fmtDur((maxSteps - step) * sps)} of training left in total` : '')
+    : '';
+
+  const began = start.time || run.session_time;
+  const stoppedAt = run.end_time || (run.status === 'running' || run.status === 'preparing' ? now : lastLog && lastLog.time);
+  $('elapsed').textContent = began ? `Elapsed ${fmtDur(stoppedAt - began)}` : '';
+  if (run.status === 'running' && sps) {
+    const left = (target - step) * sps;
+    $('eta').textContent = `About ${fmtDur(left)} left${isBatch ? ' in this batch' : ''} · done around ${new Date((now + left) * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
+  } else if (run.status === 'finished') {
+    $('eta').textContent = `Finished at ${fmtClock(run.end_time)}` + (batchDone ? ' · run train_model.py again to continue' : '');
+  } else if (run.status === 'stopped') {
+    $('eta').textContent = lastLog ? `Last update ${fmtClock(lastLog.time)}` : 'No training steps logged';
+  } else {
+    $('eta').textContent = run.status === 'running' ? 'Estimating time left…' : '';
+  }
+
+  // KPI tiles
+  if (train.length) {
+    const cur = train.at(-1).y, delta = cur - train[0].y;
+    $('kLoss').textContent = fmtLoss(cur);
+    const sub = $('kLossSub');
+    sub.textContent = train.length > 1 ? `${delta <= 0 ? '↓' : '↑'} ${Math.abs(delta).toFixed(3)} since step ${train[0].x}` : '';
+    sub.className = 'sub ' + (train.length > 1 ? (delta <= 0 ? 'delta-good' : 'delta-bad') : '');
+  } else { $('kLoss').textContent = '–'; $('kLossSub').textContent = ''; }
+  if (val.length) {
+    const best = val.reduce((a, b) => (b.y < a.y ? b : a));
+    $('kVal').textContent = fmtLoss(best.y);
+    $('kValSub').textContent = `at step ${best.x.toLocaleString()} · latest ${fmtLoss(val.at(-1).y)}`;
+  } else { $('kVal').textContent = '–'; $('kValSub').textContent = 'No validation yet'; }
+  $('kSpeed').textContent = sps ? `${sps.toFixed(2)} s/step` : '–';
+  $('kSpeedSub').textContent = sps && batch ? `${Math.round(batch / sps)} samples/s` : '';
+
+  lossChart.update([
+    { name: 'Train', color: '--series-1', mode: 'line', points: train },
+    { name: 'Validation', color: '--series-2', mode: 'dots', points: val },
+  ]);
+  lrChart.update([{ name: 'Learning rate', color: '--series-1', mode: 'line', points: lr }]);
+
+  $('footer').textContent = `Run folder models/${run.name} · updated ${new Date(now * 1000).toLocaleTimeString()} · refreshes every ${POLL_MS / 1000} s`;
+}
+
+function renderSystem(state) {
+  const gpu = state.gpu, latest = gpu.at(-1);
+  $('kGpu').textContent = latest ? `${latest.util}%` : '–';
+  $('kGpuSub').textContent = latest && latest.mem ? `${fmtGB(latest.mem)} GPU memory in use` : '';
+  gpuChart.update([{ name: 'GPU use', color: '--series-1', mode: 'line', area: true,
+                     points: gpu.map((g) => ({ x: g.time - state.now, y: g.util })) }]);
+
+  const free = state.disk.free, sub = $('kDiskSub');
+  $('kDisk').textContent = fmtGB(free);
+  const level = free < 5e9 ? { icon: '■', color: 'var(--critical)', label: 'Critical: training may fail to save' }
+              : free < 15e9 ? { icon: '▲', color: 'var(--warning)', label: 'Low' }
+              : { icon: '●', color: 'var(--good)', label: 'OK' };
+  sub.textContent = '';
+  const icon = document.createElement('span');
+  icon.style.color = level.color;
+  icon.textContent = level.icon + ' ';
+  sub.append(icon, document.createTextNode(`${level.label} · ${fmtGB(state.disk.total)} disk`));
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/state' + (selectedRun ? `?run=${encodeURIComponent(selectedRun)}` : ''), { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    render(await res.json());
+    $('offline').hidden = true;
+  } catch (err) {
+    $('offline').hidden = false;
+  }
+}
+
+$('run').addEventListener('change', (ev) => { selectedRun = ev.target.value; refresh(); });
+refresh();
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>

@@ -5,6 +5,10 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 from datasets import Dataset, DatasetDict
 import multiprocessing
+import sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from dataloader import aligned_truncate
 
 def create_cache():
     TOKENIZER_DIR = "dataset/processed/tab_tokenizer"
@@ -36,9 +40,11 @@ def create_cache():
                 try:
                     with open(fpath, 'r', encoding='utf-8') as f:
                         data = json.load(f)
-                        
-                        midi_text = " ".join(data['midi']) + " " + tokenizer.eos_token
-                        tab_text = " ".join(data['tab']) + " " + tokenizer.eos_token
+
+                        # Cut both at the same point in time (room for EOS)
+                        midi, tab = aligned_truncate(data['midi'], data['tab'], MAX_LENGTH - 1)
+                        midi_text = " ".join(midi) + " " + tokenizer.eos_token
+                        tab_text = " ".join(tab) + " " + tokenizer.eos_token
                         
                         # Note: We don't tokenize here yet if we want to use 'map', 
                         # but doing it here and saving to arrow is fastest for training.

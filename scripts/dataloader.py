@@ -4,6 +4,35 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import T5Tokenizer
 
+def aligned_truncate(midi_tokens, tab_tokens, max_tokens):
+    """Cut a MIDI/tab pair at the same point in time so neither exceeds max_tokens.
+
+    MIDI uses more tokens than tab for the same music (it also has note-offs and the
+    CAPO/TUNING prefix), so truncating each to max_tokens separately leaves the tab
+    target covering ~1.5x the time of the MIDI input. Both streams share the same
+    TS_ (time shift) tokens in the same order, so cut MIDI at its last time-step
+    boundary that fits and cut tab before the matching TS_.
+    """
+    if len(midi_tokens) <= max_tokens and len(tab_tokens) <= max_tokens:
+        return midi_tokens, tab_tokens
+    boundaries = [i for i in range(1, min(len(midi_tokens), max_tokens + 1))
+                  if midi_tokens[i].startswith("TS_")]
+    if len(midi_tokens) <= max_tokens:
+        cut = len(midi_tokens)
+    elif boundaries:
+        cut = boundaries[-1]
+    else:  # one time step longer than max_tokens: nothing to align on
+        return midi_tokens[:max_tokens], tab_tokens[:max_tokens]
+    steps = sum(1 for t in midi_tokens[:cut] if t.startswith("TS_"))
+    tab_cut, seen = len(tab_tokens), 0
+    for i, t in enumerate(tab_tokens):
+        if t.startswith("TS_"):
+            seen += 1
+            if seen > steps:
+                tab_cut = i
+                break
+    return midi_tokens[:cut], tab_tokens[:min(tab_cut, max_tokens)]
+
 class TabDataset(Dataset):
     def __init__(self, file_list_path, data_dir, tokenizer, max_length=512):
         self.data_dir = data_dir
@@ -22,9 +51,9 @@ class TabDataset(Dataset):
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
-                midi_tokens = data['midi']
-                tab_tokens = data['tab']
-                
+                # Leave room for EOS
+                midi_tokens, tab_tokens = aligned_truncate(data['midi'], data['tab'], self.max_length - 1)
+
                 midi_text = " ".join(midi_tokens) + " " + self.tokenizer.eos_token
                 tab_text = " ".join(tab_tokens) + " " + self.tokenizer.eos_token
                 # Tokenize

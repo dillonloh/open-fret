@@ -65,6 +65,20 @@ python scripts/train_model.py
 
 *Note: Optimized to train on GPUs with as little as 8GB VRAM using the Adafactor optimizer.*
 
+For a short test run first (same model and settings, a random subset, a fixed number of steps; prints seconds per step and an estimate for the full run):
+
+```bash
+python scripts/quick_train.py 300            # max_steps [n_train=4000] [output_dir=models/test-run]
+```
+
+### Tracking training
+
+Both training scripts write `models/<run>/metrics.jsonl`. A small local dashboard reads it and shows progress, time left, loss and learning-rate curves, speed, live GPU use (Apple Silicon) and free disk:
+
+```bash
+python dashboard/server.py                   # then open http://127.0.0.1:8765
+```
+
 ### 4. Inference
 
 Convert your MIDI files to tokens, and then to tablature:
